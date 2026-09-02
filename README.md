@@ -36,7 +36,7 @@ uv run uvicorn hukuki_mcp.asgi:app --host 127.0.0.1 --port 8000
 
 MCP yolu: `http://127.0.0.1:8000/mcp`
 
-Ofis + ev: bu private GitHub deposunu her iki makinede `git pull`. Veritabanı (`data/ictihat.sqlite`) git’te yoktur; her makinede kullanımla büyür.
+Ofis + ev: private depoyu `git clone` / `git pull`. `data/ictihat.sqlite` şu an repoda (küçük ofis külliyatı). Büyüyünce VPS veya ayrı sync düşünülür; `-wal`/`-journal` git’te yok.
 
 ## Cursor MCP örneği
 
