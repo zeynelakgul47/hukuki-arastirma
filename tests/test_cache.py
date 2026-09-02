@@ -6,12 +6,25 @@ from hukuki_mcp.cache import IctihatCache
 def test_put_get_and_fts(tmp_path: Path):
     cache = IctihatCache(tmp_path / "t.sqlite")
     assert cache.get_ictihat("d1") is None
-    cache.put_ictihat("d1", "Etkin pişmanlık hükümleri uygulandı.", {"esas": "2020/1"})
+    cache.put_ictihat(
+        "d1",
+        "Etkin pişmanlık hükümleri uygulandı.",
+        {"esas": "2020/1"},
+        birim_adi="9. Hukuk Dairesi",
+        esas_no="2020/1",
+        karar_no="2020/2",
+        tags=["ornek"],
+    )
     hit = cache.get_ictihat("d1")
     assert hit["cache_hit"] is True
     assert "pişmanlık" in hit["markdown"]
+    assert hit["birim_adi"] == "9. Hukuk Dairesi"
+    assert "ornek" in hit["tags"]
     rows = cache.search_fts("pişmanlık")
     assert rows and rows[0]["document_id"] == "d1"
+    ozet = cache.daire_ozet()
+    assert ozet[0]["birim_adi"] == "9. Hukuk Dairesi"
+    assert cache.list_by_tag("ornek")[0]["document_id"] == "d1"
 
 
 def test_mevzuat_hash_change(tmp_path: Path):

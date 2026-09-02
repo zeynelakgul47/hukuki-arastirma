@@ -34,6 +34,10 @@ CACHE = IctihatCache(ROOT / "data" / "ictihat.sqlite")
 _mevzuat_client = BedestenClient(enable_cache=False)
 
 
+def _tool_fn(tool):
+    return getattr(tool, "fn", tool)
+
+
 def get_mcp_app():
     return app
 
@@ -59,7 +63,7 @@ async def ictihat_ara(
     kararTarihiStart: str = Field("", description="Karar tarihi başlangıç YYYY-MM-DD"),
     kararTarihiEnd: str = Field("", description="Karar tarihi bitiş YYYY-MM-DD"),
 ) -> dict:
-    return await search_bedesten_unified(
+    result = await _tool_fn(search_bedesten_unified)(
         ctx,
         phrase=phrase,
         court_types=court_types,
@@ -68,6 +72,21 @@ async def ictihat_ara(
         kararTarihiStart=kararTarihiStart,
         kararTarihiEnd=kararTarihiEnd,
     )
+    for d in (result or {}).get("decisions") or []:
+        did = str(d.get("documentId") or "")
+        if not did:
+            continue
+        CACHE.put_ictihat(
+            did,
+            "",
+            metadata=d,
+            birim_adi=d.get("birimAdi"),
+            esas_no=d.get("esasNo"),
+            karar_no=d.get("kararNo"),
+            karar_tarihi=d.get("kararTarihiStr"),
+            court_type=(d.get("itemType") or {}).get("name") if isinstance(d.get("itemType"), dict) else None,
+        )
+    return result
 
 
 @app.tool(
@@ -87,10 +106,17 @@ async def ictihat_getir(
             "markdown_content": hit["markdown"],
             "cache_hit": True,
             "fetched_at": hit["fetched_at"],
+            "birim_adi": hit.get("birim_adi"),
+            "esas_no": hit.get("esas_no"),
+            "karar_no": hit.get("karar_no"),
+            "tags": hit.get("tags") or [],
         }
-    doc: BedestenDocumentMarkdown = await get_bedesten_document_markdown(documentId)
+    existing = CACHE.get_ictihat(documentId)
+    doc: BedestenDocumentMarkdown = await _tool_fn(get_bedesten_document_markdown)(documentId)
     markdown = getattr(doc, "markdown_content", None) or str(doc)
     meta = doc.model_dump() if hasattr(doc, "model_dump") else {}
+    if existing:
+        meta = {**(existing.get("metadata") or {}), **meta}
     if markdown and not str(markdown).startswith("ERROR"):
         CACHE.put_ictihat(documentId, markdown, metadata=meta)
     return {
@@ -112,7 +138,7 @@ async def aym_ictihat_ara(
     page_to_fetch: int = Field(1, ge=1, le=100),
     results_per_page: int = Field(10, ge=1, le=100),
 ):
-    return await search_anayasa_unified(
+    return await _tool_fn(search_anayasa_unified)(
         decision_type=decision_type,  # type: ignore[arg-type]
         keywords=keywords,
         page_to_fetch=page_to_fetch,
@@ -210,6 +236,22 @@ async def mevzuat_icinde_ara(
             if len(hits) >= 25:
                 break
     return {"mevzuat_id": mevzuat_id, "keyword": keyword, "hits": hits, "live": True}
+
+
+
+@app.tool(
+    name="ictihat_cache_liste",
+    description="Yerel SQLite külliyatı: daire daire özet veya bir daire/etiket altındaki künyeler. Tam metin için ictihat_getir.",
+)
+async def ictihat_cache_liste(
+    birim_adi: str = Field("", description="Örn. '9. Hukuk Dairesi'. Boşsa daire özeti."),
+    tag: str = Field("", description="Örn. cikis_kodu, arabuluculuk, hukuki_yarar"),
+) -> dict:
+    if tag.strip():
+        return {"tag": tag.strip(), "rows": CACHE.list_by_tag(tag.strip())}
+    if birim_adi.strip():
+        return {"birim_adi": birim_adi.strip(), "rows": CACHE.list_by_daire(birim_adi.strip())}
+    return {"daireler": CACHE.daire_ozet()}
 
 
 @app.tool(
